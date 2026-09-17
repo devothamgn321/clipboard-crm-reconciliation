@@ -1,3 +1,5 @@
+> **Written before approval.** All 29 items are now applied. For a live demo, use the Audit trail to walk through each step, or run the offline demo in README to show approvals on captured data.
+
 # Five-minute demo path
 
 1. **Coverage** — Start with “121/121 CRM accounts considered,” 35 website locations and 29 pending decisions. Open All CRM accounts and point out 100 + 21 authenticated page receipts. Search Amberly Manor: the Colorado record stays unrelated. Open Website facilities to show the separate Hudson facility and homepage-discovered Findlay.

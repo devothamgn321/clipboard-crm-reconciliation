@@ -1,3 +1,4 @@
+# One-time recovery used on Sep 17, 2026 after the first live write (Amberly Manor). Kept for audit. Not part of the daily flow.
 """1) Patch service.py: stop requiring the API's write RESPONSE to echo every field
       (it only returns {account_id, message}). The GET read-back check stays.
    2) Re-verify Amberly Manor live (GET only) and, only if it matches, record the

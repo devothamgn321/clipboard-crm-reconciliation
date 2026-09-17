@@ -1,3 +1,5 @@
+> **Pre-approval snapshot (Sep 17, 2026, 10:39 AM EDT).** All 29 proposals below were later reviewed and applied: CRM went from 121 to 127 accounts and a re-run found 0 open issues. See README for the final state.
+
 # Reconciliation summary
 
 Read-only live snapshot: 2026-09-17T14:39:35.029533+00:00. **No live changes applied; 29 proposals await human review.**

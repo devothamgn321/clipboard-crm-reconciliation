@@ -1,3 +1,5 @@
+> **Pre-approval record.** Written before any live writes. The first live write exposed a verification bug (API returns only `{account_id, message}`), which was fixed and recovered; all 29 proposals were then applied and verified by read-back. See README and WRITEUP.
+
 # Verification record
 
 Verified September 17, 2026. Build workspace was created around 10:23 EDT; final verification took place around 10:42 EDT (approximately 19 minutes of this agent session, excluding prior discussion and the candidate's review/submission time). Report actual total candidate time separately.
