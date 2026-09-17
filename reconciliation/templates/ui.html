@@ -1,0 +1,899 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Clipboard • Ownership review</title>
+    <style>
+      :root {
+        --ink: #182d35;
+        --muted: #61747c;
+        --line: #dde5e7;
+        --teal: #126963;
+        --paper: #f5f7f7;
+        --orange: #ac591b;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: var(--paper);
+        color: var(--ink);
+        font:
+          14px/1.55 system-ui,
+          -apple-system,
+          sans-serif;
+      }
+      button,
+      input,
+      select,
+      textarea {
+        font: inherit;
+      }
+      button {
+        cursor: pointer;
+        border: 1px solid var(--line);
+        background: white;
+        color: var(--ink);
+        border-radius: 7px;
+        padding: 9px 14px;
+        font-weight: 600;
+      }
+      button:hover {
+        border-color: var(--teal);
+      }
+      button:disabled {
+        opacity: 0.5;
+        cursor: wait;
+      }
+      .primary {
+        background: var(--teal);
+        color: white;
+        border-color: var(--teal);
+      }
+      header {
+        background: #122f37;
+        color: white;
+        padding: 20px 4%;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 20px;
+      }
+      .brand {
+        font-size: 20px;
+        font-weight: 750;
+        letter-spacing: -0.5px;
+      }
+      .brand small {
+        font-size: 11px;
+        letter-spacing: 2px;
+        font-weight: 500;
+        display: block;
+        color: #a7ceca;
+      }
+      header .label {
+        color: #c4dedb;
+        font-size: 12px;
+      }
+      main {
+        max-width: 1480px;
+        margin: auto;
+        padding: 28px 4%;
+      }
+      h1 {
+        font-size: 30px;
+        letter-spacing: -1px;
+        margin: 0 0 5px;
+      }
+      h2 {
+        font-size: 22px;
+        line-height: 1.3;
+        margin: 0 0 12px;
+      }
+      h3 {
+        font-size: 12px;
+        text-transform: uppercase;
+        letter-spacing: 1.3px;
+        margin: 0 0 12px;
+        color: var(--muted);
+      }
+      p {
+        margin: 8px 0;
+      }
+      .muted {
+        color: var(--muted);
+      }
+      .top {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 24px;
+        margin-bottom: 25px;
+      }
+      .stats {
+        display: grid;
+        grid-template-columns: repeat(6, 1fr);
+        gap: 12px;
+        margin: 22px 0;
+      }
+      .stat {
+        background: white;
+        border: 1px solid var(--line);
+        border-radius: 9px;
+        padding: 18px;
+      }
+      .stat b {
+        display: block;
+        font-size: 28px;
+        line-height: 1.25;
+      }
+      .stat span {
+        font-size: 12px;
+        color: var(--muted);
+      }
+      nav {
+        display: flex;
+        gap: 22px;
+        border-bottom: 1px solid var(--line);
+        margin-bottom: 22px;
+      }
+      nav button {
+        background: transparent;
+        border: 0;
+        border-radius: 0;
+        padding: 12px 2px;
+        color: var(--muted);
+      }
+      nav button.active {
+        color: var(--teal);
+        border-bottom: 3px solid var(--teal);
+      }
+      .controls {
+        display: flex;
+        gap: 10px;
+        margin-bottom: 16px;
+      }
+      input,
+      select,
+      textarea {
+        padding: 10px;
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        background: white;
+        color: var(--ink);
+      }
+      input[type="search"] {
+        flex: 1;
+        min-width: 80px;
+      }
+      .workspace {
+        display: grid;
+        grid-template-columns: 340px minmax(0, 1fr);
+        gap: 20px;
+      }
+      .queue {
+        max-height: 940px;
+        overflow: auto;
+      }
+      .item {
+        width: 100%;
+        text-align: left;
+        padding: 17px;
+        margin-bottom: 9px;
+        border-radius: 9px;
+      }
+      .item.selected {
+        border-color: var(--teal);
+        box-shadow: inset 3px 0 var(--teal);
+        background: #f0f8f6;
+      }
+      .item strong {
+        display: block;
+        font-size: 14px;
+        margin: 6px 0;
+      }
+      .item small {
+        color: var(--muted);
+        font-weight: 400;
+      }
+      .tag {
+        font-size: 10px;
+        text-transform: uppercase;
+        letter-spacing: 0.7px;
+        border-radius: 4px;
+        padding: 3px 6px;
+        background: #edf1f2;
+        display: inline-block;
+      }
+      .tag.chow_required,
+      .tag.ambiguous,
+      .tag.stale_needs_review {
+        background: #fff0d8;
+        color: #885014;
+      }
+      .tag.applied {
+        background: #dcefe6;
+        color: #236247;
+      }
+      .card {
+        background: white;
+        border: 1px solid var(--line);
+        border-radius: 11px;
+        padding: 25px;
+        margin-bottom: 16px;
+      }
+      .detail-title {
+        display: flex;
+        justify-content: space-between;
+        gap: 15px;
+      }
+      .score {
+        text-align: right;
+        white-space: nowrap;
+      }
+      .score b {
+        font-size: 24px;
+        color: var(--teal);
+      }
+      .columns {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 14px;
+        margin-top: 22px;
+      }
+      .evidence {
+        background: #f5f8f8;
+        border-radius: 7px;
+        padding: 17px;
+        overflow-wrap: anywhere;
+      }
+      .evidence a {
+        color: var(--teal);
+      }
+      .money {
+        display: flex;
+        gap: 30px;
+        padding: 18px 0;
+      }
+      .money b {
+        display: block;
+        font-size: 20px;
+      }
+      .money span {
+        font-size: 12px;
+        color: var(--muted);
+      }
+      .safety {
+        border-left: 3px solid #c28c42;
+        background: #fff8ec;
+        padding: 13px 16px;
+        margin: 6px 0 20px;
+      }
+      table {
+        border-collapse: collapse;
+        width: 100%;
+        font-size: 13px;
+      }
+      th {
+        text-align: left;
+        color: var(--muted);
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.7px;
+      }
+      td,
+      th {
+        padding: 11px 9px;
+        border-bottom: 1px solid var(--line);
+        vertical-align: top;
+        overflow-wrap: anywhere;
+      }
+      td:last-child {
+        color: var(--teal);
+      }
+      table {
+        table-layout: fixed;
+      }
+      .review {
+        display: grid;
+        grid-template-columns: 1fr 2fr;
+        gap: 12px;
+      }
+      .review label {
+        font-size: 12px;
+        color: var(--muted);
+      }
+      .review input,
+      .review textarea {
+        width: 100%;
+        display: block;
+        margin: 5px 0 12px;
+      }
+      .actions {
+        display: flex;
+        justify-content: flex-end;
+        gap: 10px;
+        align-items: center;
+      }
+      .actions small {
+        margin-right: auto;
+        color: var(--muted);
+      }
+      #notice {
+        padding: 12px 15px;
+        margin-bottom: 15px;
+        border-radius: 6px;
+        background: #e3efec;
+        display: none;
+      }
+      #notice.error {
+        background: #fff0e7;
+        color: #873f21;
+      }
+      .hidden {
+        display: none !important;
+      }
+      .empty {
+        padding: 35px;
+        text-align: center;
+        color: var(--muted);
+      }
+      pre {
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+        font-size: 12px;
+      }
+      .audit-item {
+        padding: 15px 0;
+        border-bottom: 1px solid var(--line);
+      }
+      .audit-item summary {
+        cursor: pointer;
+      }
+      .policy {
+        max-width: 900px;
+      }
+      .policy li {
+        margin: 14px 0;
+      }
+      .footer {
+        font-size: 12px;
+        color: var(--muted);
+        margin: 26px 0;
+      }
+      #busy {
+        color: #c6e6df;
+        font-size: 12px;
+      }
+      @media (max-width: 950px) {
+        .workspace {
+          grid-template-columns: 280px minmax(0, 1fr);
+        }
+        .columns,
+        .review {
+          grid-template-columns: 1fr;
+        }
+        .stats {
+          grid-template-columns: repeat(3, 1fr);
+        }
+      }
+      @media (max-width: 700px) {
+        main {
+          padding: 20px;
+        }
+        .workspace {
+          grid-template-columns: 1fr;
+        }
+        .queue {
+          max-height: 300px;
+        }
+        .stats {
+          grid-template-columns: repeat(2, 1fr);
+        }
+        .top {
+          align-items: flex-start;
+        }
+        .controls {
+          flex-wrap: wrap;
+        }
+        .card {
+          padding: 18px;
+        }
+        header {
+          padding: 17px 20px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div class="brand">
+        clipboard<span style="color: #77bfb1"> / </span>CRM reconciliation<small
+          >BELLHAVEN SENIOR LIVING</small
+        >
+      </div>
+      <div>
+        <div class="label">Human approval required for every change</div>
+        <div id="busy">Local review workspace</div>
+      </div>
+    </header>
+    <main>
+      <div class="top">
+        <div>
+          <h1>Keep ownership accurate.</h1>
+          <p class="muted">
+            Website evidence, CRM history, and a clear decision for every
+            correction.
+          </p>
+        </div>
+        <button id="run" class="primary">↻ Refresh proposals</button>
+      </div>
+      <div id="notice" role="status" aria-live="polite"></div>
+      <div id="stats" class="stats"></div>
+      <nav aria-label="Workspace views">
+        <button class="active" data-tab="review">Review queue</button
+        ><button data-tab="facilities">Website facilities</button
+        ><button data-tab="inventory">All CRM accounts</button
+        ><button data-tab="policy">Decision policy</button
+        ><button data-tab="audit">Audit trail</button>
+      </nav>
+      <section id="review">
+        <div class="controls">
+          <input
+            id="search"
+            type="search"
+            aria-label="Search proposals"
+            placeholder="Search facility, city, or account ID"
+          /><select id="status" aria-label="Proposal status">
+            <option value="pending_review">Pending review</option>
+            <option value="">All decisions</option>
+            <option value="applied">Applied</option>
+            <option value="rejected">Rejected</option>
+            <option value="recovery_required">Recovery required</option>
+            <option value="superseded">Superseded</option></select
+          ><select id="classification" aria-label="Classification">
+            <option value="">All classifications</option>
+          </select>
+        </div>
+        <div class="workspace">
+          <aside class="queue" id="queue" aria-label="Proposals"></aside>
+          <div id="detail"></div>
+        </div>
+      </section>
+      <section id="facilities" class="hidden">
+        <div class="card">
+          <h2>Complete website inventory</h2>
+          <p class="muted">
+            Includes homepage announcements and every linked directory page. Raw
+            offerings are preserved as website evidence.
+          </p>
+          <div id="facility-table"></div>
+        </div>
+      </section>
+      <section id="inventory" class="hidden">
+        <div class="card">
+          <h2>Every CRM account, accounted for.</h2>
+          <p class="muted">
+            The full inventory is searched for ownership corrections and
+            duplicate copies across every parent. Unrelated accounts remain
+            unchanged.
+          </p>
+          <div id="coverage-proof" class="safety"></div>
+          <div class="controls">
+            <input
+              id="account-search"
+              type="search"
+              aria-label="Search all CRM accounts"
+              placeholder="Search all 121 accounts by name, parent, city or ID"
+            /><select id="disposition" aria-label="Account disposition">
+              <option value="">All outcomes</option>
+            </select>
+          </div>
+          <p id="account-count" class="muted"></p>
+          <div
+            style="max-height: 700px; overflow: auto"
+            id="account-table"
+          ></div>
+        </div>
+      </section>
+      <section id="policy" class="hidden">
+        <div class="card policy">
+          <h2>Explicit rules. No automatic CRM writes.</h2>
+          <ol>
+            <li>
+              <b>Discover completely.</b> Crawl homepage, directory pagination
+              and linked details. Deduplicate by canonical URL and normalized
+              address. Stop the run on fetch failures, parsing failures, or a
+              shortfall against the homepage count.
+            </li>
+            <li>
+              <b>Match the address first.</b> Normalize punctuation, directions
+              and street suffixes; require locality and ZIP. An exact name plus
+              street/locality can support a ZIP correction. Name alone never
+              overrides conflicting streets.
+            </li>
+            <li>
+              <b>Preserve billing history.</b> A parent change with positive
+              revenue and positive AR creates a successor and links the old
+              account. The old account's other fields stay unchanged. Zero
+              revenue OR zero AR allows direct re-parenting.
+            </li>
+            <li>
+              <b>Mark duplicate copies.</b> Prefer billing history, existing
+              Bellhaven ownership, active status, then stable ID. Only
+              zero-balance losing copies are eligible. Set Inactive and
+              duplicate_of_account; never delete or merge. Correct the survivor
+              first.
+            </li>
+            <li>
+              <b>Flag uncertainty.</b> A missing website listing is not proof of
+              a sale. Apply Needs Review and explanatory notes while keeping the
+              parent and financial fields intact.
+            </li>
+            <li>
+              <b>Approve deliberately.</b> Each approval re-crawls the website,
+              re-fetches the CRM, compares the deterministic proposal, and
+              rechecks financial safety. Writes are journaled before sending and
+              verified by read-back.
+            </li>
+            <li>
+              <b>Stop on uncertainty after a write.</b> A timeout or partial
+              CHOW enters recovery_required. No automatic POST retry. Inspect
+              the durable operation journal and follow the recovery runbook.
+            </li>
+          </ol>
+          <p class="muted">
+            Confidence scores are deterministic evidence tiers, not
+            statistically calibrated probabilities. This local prototype trusts
+            the named reviewer; it has no identity provider.
+          </p>
+        </div>
+      </section>
+      <section id="audit" class="hidden">
+        <div class="card">
+          <h2>Decision & operation history</h2>
+          <p class="muted">
+            Append-only application events. Expand an entry for source evidence,
+            decision details, or CRM write receipts.
+          </p>
+          <div id="events"></div>
+        </div>
+      </section>
+      <div id="footer" class="footer"></div>
+    </main>
+    <script>
+      let state = {},
+        selected = null,
+        busy = false;
+      const $ = (id) => document.getElementById(id);
+      const esc = (x) =>
+        String(x ?? "—").replace(
+          /[&<>"']/g,
+          (c) =>
+            ({
+              "&": "&amp;",
+              "<": "&lt;",
+              ">": "&gt;",
+              '"': "&quot;",
+              "'": "&#39;",
+            })[c],
+        );
+      const labels = {
+        missing_account: "New account",
+        direct_reparent: "Parent correction",
+        chow_required: "CHOW required",
+        duplicate: "Duplicate copy",
+        field_update: "Field correction",
+        ambiguous: "Identity investigation",
+        stale_needs_review: "Stale ownership",
+        unchanged: "Correct match",
+      };
+      const label = (x) => labels[x] || String(x).replaceAll("_", " ");
+      const money = (x) =>
+        new Intl.NumberFormat("en-US", {
+          style: "currency",
+          currency: "USD",
+          maximumFractionDigits: 0,
+        }).format(x || 0);
+      function notify(text, error = false) {
+        $("notice").textContent = text;
+        $("notice").style.display = "block";
+        $("notice").className = error ? "error" : "";
+      }
+      async function api(url, body) {
+        const r = await fetch(
+          url,
+          body
+            ? {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                  "X-Review-Token": state.review_token,
+                },
+                body: JSON.stringify(body),
+              }
+            : {},
+        );
+        const d = await r.json();
+        if (!r.ok)
+          throw new Error(
+            typeof d.detail === "string" ? d.detail : JSON.stringify(d.detail),
+          );
+        return d;
+      }
+      function badge(p) {
+        return `<span class="tag ${esc(p.classification)}">${esc(label(p.classification))}</span>`;
+      }
+      async function load() {
+        state = await api("/api/state");
+        let r = state.latest || {};
+        const ps = state.proposals || [];
+        const counts = [
+          [
+            "CRM accounts considered",
+            `${r.accounts_considered || 0}/${r.crm_accounts || 0}`,
+          ],
+          ["Website facilities", r.website_facilities || 0],
+          ["Current Bellhaven children", r.current_bellhaven_children || 0],
+          [
+            "Pending decisions",
+            ps.filter((p) => p.status === "pending_review").length,
+          ],
+          [
+            "CHOW to review",
+            ps.filter(
+              (p) =>
+                p.status === "pending_review" &&
+                p.classification === "chow_required",
+            ).length,
+          ],
+          [
+            "Verified applications",
+            ps.filter((p) => p.status === "applied").length,
+          ],
+        ];
+        $("stats").innerHTML = counts
+          .map(
+            ([s, n]) => `<div class="stat"><b>${n}</b><span>${s}</span></div>`,
+          )
+          .join("");
+        const prior = $("classification").value;
+        $("classification").innerHTML =
+          '<option value="">All classifications</option>' +
+          [...new Set(ps.map((p) => p.classification))]
+            .map((c) => `<option value="${c}">${esc(label(c))}</option>`)
+            .join("");
+        $("classification").value = prior;
+        $("footer").textContent = r.at
+          ? `Last successful ${r.snapshot_mode ? "snapshot" : "live"} run: ${new Date(r.at).toLocaleString()} • ${r.crm_accounts} CRM accounts • ${r.crawl?.pages?.length || 0} source pages • ${state.live_configured ? "Live approval connection configured" : "Set CRM_API_TOKEN before live reconciliation or approval"}`
+          : "Run reconciliation to populate the queue.";
+        renderQueue();
+        renderFacilities();
+        renderInventory();
+      }
+      function renderQueue() {
+        const q = $("search").value.toLowerCase(),
+          status = $("status").value,
+          c = $("classification").value;
+        const rows = (state.proposals || []).filter(
+          (p) =>
+            (!status || p.status === status) &&
+            (!c || p.classification === c) &&
+            JSON.stringify([p.facility, p.current]).toLowerCase().includes(q),
+        );
+        if (!rows.some((p) => p.id === selected)) selected = rows[0]?.id;
+        $("queue").innerHTML =
+          rows
+            .map(
+              (p) =>
+                `<button class="item ${p.id === selected ? "selected" : ""}" data-id="${p.id}">${badge(p)}<strong>${esc((p.facility || p.current).name)}</strong><small>${esc(p.facility?.city || p.current?.billing_city)} · ${esc(label(p.status))}${p.classification === "duplicate" ? "<br>Losing: " + esc(p.current.name) + "<br>" + esc(p.current.account_id) : ""}</small></button>`,
+            )
+            .join("") || '<div class="empty">No proposals in this view.</div>';
+        document.querySelectorAll("[data-id]").forEach(
+          (b) =>
+            (b.onclick = () => {
+              selected = b.dataset.id;
+              renderQueue();
+            }),
+        );
+        renderDetail();
+      }
+      function renderDetail() {
+        const p = state.proposals?.find((p) => p.id === selected);
+        if (!p) {
+          $("detail").innerHTML =
+            '<div class="card empty">Select a proposal to review its evidence.</div>';
+          return;
+        }
+        const f = p.facility,
+          a = p.current || {},
+          chow = p.classification === "chow_required";
+        const fields = Object.entries(p.changes);
+        const safety =
+          p.classification === "missing_account"
+            ? "Create a new account under Bellhaven. No existing account is modified; the live inventory is checked again before creation."
+            : chow
+              ? "Positive lifetime revenue and outstanding AR. Create a new Bellhaven account, then set only chow_current_account on the old account. Preserve the old parent, name, address, status and balances."
+              : p.classification === "direct_reparent"
+                ? "Direct re-parent permitted: no revenue history OR no outstanding AR. Both values will be checked again immediately before the write."
+                : p.classification === "duplicate"
+                  ? "Only the losing copy becomes Inactive and points to the survivor. Parent and billing fields stay intact. The survivor must first be active under Bellhaven."
+                  : "No parent change proposed. Existing revenue, AR and ownership history stay intact.";
+        $("detail").innerHTML =
+          `<div class="card"><div class="detail-title"><div>${badge(p)}<h2 style="margin-top:10px">${esc((f || a).name)}</h2><span class="tag ${esc(p.status)}">${esc(label(p.status))}</span></div><div class="score"><b>${Math.round(p.confidence * 100)}%</b><div class="muted">evidence tier</div></div></div><div class="columns"><div class="evidence"><h3>Website evidence</h3>${f ? `<b>${esc(f.name)}</b><br>${esc(f.address)}<br>${esc(f.city)}, ${esc(f.state)} ${esc(f.zip)}<p>${esc(f.care_offerings.join(" · "))}</p><a href="${esc(f.url)}" target="_blank" rel="noopener noreferrer">View source ↗</a>` : "Absent from the complete website crawl. Absence alone does not establish a new owner."}</div><div class="evidence"><h3>Matched CRM account</h3>${p.current ? `<b>${esc(a.name)}</b><br>${esc(a.billing_street)}<br>${esc(a.billing_city)}, ${esc(a.billing_state)} ${esc(a.billing_zip)}<p>Account: ${esc(a.account_id)}<br>Parent: ${esc(parentName(a.parent_id))}<br>Status: ${esc(a.status)}</p>` : "No supported match. Approval will create a new account after checking the live inventory again."}</div></div><div class="money"><div><span>Lifetime revenue</span><b>${p.current ? money(a.lifetime_revenue) : "New account"}</b></div><div><span>Outstanding AR</span><b>${p.current ? money(a.outstanding_ar) : "—"}</b></div></div><div class="safety"><b>Billing & ownership guard</b><br>${safety}</div><h3>Why this proposal</h3><ul>${p.reasons.map((s) => `<li>${esc(s)}</li>`).join("")}</ul><h3 style="margin-top:24px">${chow ? "New successor fields" : "Current → proposed fields"}</h3><table><thead><tr><th>Field</th><th>${chow ? "Old account (preserved)" : "Current"}</th><th>${chow ? "New account" : "Proposed"}</th></tr></thead><tbody>${fields.map(([k, v]) => `<tr><td>${esc(k.replaceAll("_", " "))}</td><td>${esc(k === "parent_id" ? parentName(a[k]) : a[k])}</td><td>${esc(k === "parent_id" ? parentName(v) : v)}</td></tr>`).join("")}${chow ? "<tr><td>Old: chow_current_account</td><td>" + esc(a.chow_current_account || "Not linked") + "</td><td>ID returned by the new-account creation</td></tr>" : ""}</tbody></table>${p.survivor_id ? `<p><b>Surviving account:</b> ${esc(p.survivor_id)}</p>` : ""}</div><div class="card">${p.status === "pending_review" ? `<h3>Record your decision</h3><div class="review"><label>Reviewer name<input id="reviewer" placeholder="Your name" value="${esc(sessionStorage.getItem("reviewer") || "")}"></label><label>Reason for decision<textarea id="rationale" rows="2" placeholder="What evidence supports your decision?"></textarea></label></div><div class="actions"><small>Approval writes to your live CRM copy.</small><button id="reject">Reject</button><button id="approve" class="primary">Approve & apply</button></div>` : `<h3>Decision recorded</h3><p>${esc(label(p.status))}</p><pre>${esc(JSON.stringify(p.last_event || {}, null, 2))}</pre>${p.status === "recovery_required" || p.status === "applying" ? "<p>Inspect the audit and follow docs/RECOVERY.md. Automatic retry is disabled.</p>" : ""}`}</div>`;
+        if ($("approve")) {
+          $("approve").onclick = () => decide("approve");
+          $("reject").onclick = () => decide("reject");
+        }
+      }
+      function parentName(id) {
+        return (
+          state.latest?.crm_snapshot?.find((a) => a.account_id === id)?.name ||
+          id ||
+          "No parent"
+        );
+      }
+      async function decide(action) {
+        if (busy) return;
+        let reviewer = $("reviewer").value.trim(),
+          rationale = $("rationale").value.trim();
+        if (!reviewer || !rationale) {
+          notify("Enter your name and a reason for this decision.", true);
+          return;
+        }
+        sessionStorage.setItem("reviewer", reviewer);
+        busy = true;
+        $("approve").disabled = $("reject").disabled = true;
+        $("busy").textContent =
+          action === "approve"
+            ? "Rechecking live evidence and applying your decision…"
+            : "Recording decision…";
+        try {
+          await api(`/api/proposals/${selected}/${action}`, {
+            reviewer,
+            rationale,
+          });
+          notify(
+            action === "approve"
+              ? "Approved change applied and verified in the CRM."
+              : "Proposal rejected. No CRM write was made.",
+          );
+        } catch (e) {
+          notify(e.message, true);
+        } finally {
+          busy = false;
+          $("busy").textContent = "Local review workspace";
+          await load();
+        }
+      }
+      function renderFacilities() {
+        const rows = state.latest?.findings || [];
+        $("facility-table").innerHTML =
+          "<table><thead><tr><th>Facility</th><th>Address</th><th>Care offerings</th><th>Match result</th></tr></thead><tbody>" +
+          rows
+            .map(
+              (r) =>
+                `<tr><td><a href="${esc(r.facility.url)}" target="_blank" rel="noopener noreferrer">${esc(r.facility.name)}</a></td><td>${esc(r.facility.address)}, ${esc(r.facility.city)}, ${esc(r.facility.state)} ${esc(r.facility.zip)}</td><td>${esc(r.facility.care_offerings.join(", "))}</td><td>${esc(label(r.classification))}</td></tr>`,
+            )
+            .join("") +
+          "</tbody></table>";
+      }
+
+      function renderInventory() {
+        const r = state.latest || {};
+        const coverage = r.account_coverage || [],
+          all = r.crm_snapshot || [],
+          receipts = r.crm_read_receipts || [];
+        const disposition = $("disposition").value;
+        $("disposition").innerHTML =
+          '<option value="">All outcomes</option>' +
+          [...new Set(coverage.map((c) => c.disposition))]
+            .sort()
+            .map((d) => `<option value="${esc(d)}">${esc(label(d))}</option>`)
+            .join("");
+        $("disposition").value = disposition;
+        const q = $("account-search").value.toLowerCase();
+        const rows = coverage
+          .map((c) => ({
+            ...c,
+            account: all.find((a) => a.account_id === c.account_id) || {},
+          }))
+          .filter(
+            (c) =>
+              (!disposition || c.disposition === disposition) &&
+              JSON.stringify([
+                c.name,
+                c.account_id,
+                c.account.parent_name,
+                c.account.billing_city,
+              ])
+                .toLowerCase()
+                .includes(q),
+          );
+        $("coverage-proof").textContent =
+          `Coverage: ${coverage.length} / ${r.crm_accounts || 0} unique CRM accounts considered. ` +
+          (receipts.length
+            ? receipts
+                .map(
+                  (x) =>
+                    `Page ${x.params.page}: ${x.records} records, HTTP ${x.status_code}, authenticated`,
+                )
+                .join(" · ")
+            : "Snapshot view: live authentication receipts are available after Refresh proposals.") +
+          " • Public website pages do not receive your CRM token.";
+        $("account-count").textContent =
+          `Showing ${rows.length} of ${coverage.length} accounts. Outcomes reflect the last successful reconciliation.`;
+        $("account-table").innerHTML =
+          "<table><thead><tr><th>CRM account</th><th>Current parent / address</th><th>Status / balances</th><th>Reconciliation outcome</th></tr></thead><tbody>" +
+          rows
+            .map(
+              (c) =>
+                `<tr><td><b>${esc(c.name)}</b><br><small>${esc(c.account_id)}</small></td><td>${esc(c.account.parent_name || "No parent")}<br><small>${esc(c.account.billing_street)}, ${esc(c.account.billing_city)} ${esc(c.account.billing_state)} ${esc(c.account.billing_zip)}</small></td><td>${esc(c.account.status)}<br><small>Revenue ${money(c.account.lifetime_revenue)}<br>AR ${money(c.account.outstanding_ar)}</small></td><td><b>${esc(label(c.disposition))}</b><br><small>${esc(c.reason)}</small>${c.proposal_ids.map((id) => `<br><button data-proposal="${id}">Review proposal</button>`).join("")}</td></tr>`,
+            )
+            .join("") +
+          "</tbody></table>";
+        document.querySelectorAll("[data-proposal]").forEach(
+          (b) =>
+            (b.onclick = () => {
+              $("status").value = "";
+              $("classification").value = "";
+              $("search").value = "";
+              selected = b.dataset.proposal;
+              document.querySelector('[data-tab="review"]').click();
+              renderQueue();
+            }),
+        );
+      }
+      $("account-search").addEventListener("input", renderInventory);
+      $("disposition").addEventListener("change", renderInventory);
+      $("run").onclick = async () => {
+        if (busy) return;
+        busy = true;
+        $("run").disabled = true;
+        $("busy").textContent = "Reading website and CRM; no writes…";
+        try {
+          const r = await api("/api/run", {});
+          notify(
+            `Read-only reconciliation complete: ${r.website_facilities} facilities, ${r.new_proposals} new proposals.`,
+          );
+          await load();
+        } catch (e) {
+          notify(e.message, true);
+        } finally {
+          busy = false;
+          $("run").disabled = false;
+          $("busy").textContent = "Local review workspace";
+        }
+      };
+      ["search", "status", "classification"].forEach((id) =>
+        $(id).addEventListener(
+          id === "search" ? "input" : "change",
+          renderQueue,
+        ),
+      );
+      document.querySelectorAll("[data-tab]").forEach(
+        (b) =>
+          (b.onclick = async () => {
+            document
+              .querySelectorAll("[data-tab]")
+              .forEach((x) => x.classList.toggle("active", x === b));
+            ["review", "facilities", "inventory", "policy", "audit"].forEach(
+              (id) => $(id).classList.toggle("hidden", id !== b.dataset.tab),
+            );
+            if (b.dataset.tab === "audit") {
+              const rows = await api("/api/audit");
+              $("events").innerHTML = rows
+                .map(
+                  (e) =>
+                    `<details class="audit-item"><summary><b>${esc(e.kind.replaceAll("_", " "))}</b> · ${esc(new Date(e.at).toLocaleString())} · ${esc((e.proposal_id || "run").slice(0, 12))}</summary><pre>${esc(JSON.stringify(e.detail, null, 2))}</pre></details>`,
+                )
+                .join("");
+            }
+          }),
+      );
+      load().catch((e) => notify(e.message, true));
+    </script>
+  </body>
+</html>

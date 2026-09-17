@@ -1,0 +1,7 @@
+# Template only: NOT installed. Runs at 07:00 in the host's configured timezone.
+# Replace /absolute/path with the persistent checkout location.
+# Supply CRM_API_TOKEN through the scheduler's secure environment configuration.
+# Cron does not inherit the token exported in an interactive shell.
+# Keep the same CRM_DB used by the review UI; do not use ephemeral job storage.
+# Ensure runtime/ exists. This command only reads CRM and generates proposals.
+0 7 * * * cd /absolute/path/clipboard-crm-reconciliation && CRM_DB=/absolute/path/clipboard-crm-reconciliation/runtime/reconciliation.sqlite3 .venv/bin/python -m reconciliation reconcile >> runtime/daily.log 2>&1
