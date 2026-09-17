@@ -1,91 +1,71 @@
 # Clipboard CRM Reconciliation
 
-A local review console that reconciles Bellhaven's website with the Clipboard assessment CRM. FastAPI, SQLite, deterministic matching, durable decisions, and an audit trail. **Every CRM mutation requires an individual human approval.**
+Keeps Bellhaven Senior Living's facility-to-parent links in the CRM accurate. It scrapes the website, matches every community to a CRM account, and queues each proposed change for human approval. **Nothing writes to the CRM without an approval.** Every write is re-read from the CRM and checked before it counts as applied.
 
-**Delivered state:** 35 website facilities, 121 CRM accounts, 29 Bellhaven children, 29 pending proposals. All 121 CRM records have an explicit disposition in the All CRM accounts tab and `docs/account-coverage.json`. No live CRM mutations were made during development. The second live pipeline run generated zero new proposals. The assessment evaluates corrected CRM data, so the candidate must review and approve appropriate proposals before submitting.
+## Final state (Sep 17, 2026)
 
-## Run on this machine
+| | |
+|---|---|
+| Website communities | 35 |
+| CRM accounts | 121 → 127 (6 created) |
+| Proposals | 29, all reviewed and applied |
+| Second run after decisions | 0 new proposals, 0 open findings |
 
-The project already has an installed `.venv` and a live-generated SQLite queue in `runtime/`. From this project's directory:
+Applied: 2 change-of-ownership (Marietta, Tiffin), 4 direct re-parents (Lima, Findlay, Kettering, Zanesville), 7 duplicates marked Inactive, 8 name/ZIP fixes, 4 new accounts, 3 not-on-website accounts flagged Needs Review, and Ashtabula flagged Needs Review (PO Box vs street address).
 
-```sh
-# Enter your assessment token privately; it is passed only through the environment.
-export CRM_API_TOKEN="$(python3 -c 'import getpass; print(getpass.getpass("CRM API token: "))')"
-.venv/bin/python -m reconciliation scrape
-.venv/bin/python -m reconciliation reconcile
-.venv/bin/python -m reconciliation serve
-```
+## Setup
 
-Open http://127.0.0.1:8000. If the delivered server is still running, use it directly or stop that server before launching another on the same port. `serve --port 8002` selects another port.
-
-- `scrape` writes all locations and page hashes to `runtime/website.json`; it never accesses CRM writes.
-- `reconcile` reads the website and every CRM page, saves proposals and the run snapshot to SQLite, and exports `runtime/latest-report.json`.
-- `serve` starts the local UI. Starting the server does not run or approve anything.
-- `summary` prints the latest run counts and current decision statuses.
-
-`CRM_API_TOKEN` is the only credential. `.env.example` documents it; `.env` files are not automatically loaded. The app never persists the token. The default database is `runtime/reconciliation.sqlite3`; set `CRM_DB` to change it. Keep the same database across daily runs and reviews.
-
-## Fresh setup / portable source archive
-
-Requires Python 3.10+; tested on Python 3.12. The macOS system Python 3.9 is insufficient for installing this project.
+Python 3.10+ (tested on 3.12).
 
 ```sh
 python3.12 -m venv .venv
 .venv/bin/python -m pip install -r requirements.lock.txt
 export CRM_API_TOKEN="$(python3 -c 'import getpass; print(getpass.getpass("CRM API token: "))')"
-.venv/bin/python -m reconciliation reconcile
-.venv/bin/python -m reconciliation serve
 ```
 
-For a credential-free, offline **inspection** demo, use the captured fictional assessment data:
+The token is read from the environment only and never saved. The database is `runtime/reconciliation.sqlite3` (override with `CRM_DB`). Keep the same database across runs, because it holds every decision.
 
+## Commands
+
+| Command | What it does | Writes to CRM? |
+|---|---|---|
+| `.venv/bin/python -m reconciliation reconcile` | Scrape website, read all CRM accounts, queue proposals | No |
+| `.venv/bin/python -m reconciliation serve --port 8010` | Review app at http://127.0.0.1:8010 | Only on Approve |
+| `.venv/bin/python review.py` | Terminal review: same checks as the app, one item at a time, stops at first failure | Only on approve |
+| `.venv/bin/python diagnose.py <proposal-id>` | Compare a proposal's intended write with the live account | No |
+| `.venv/bin/python -m reconciliation summary` | Last run counts and queue statuses | No |
+| `.venv/bin/python -m pytest -q` | 49 offline tests with a fake CRM | No |
+
+Offline demo with captured data, no token needed:
 ```sh
 CRM_DB=runtime/demo.sqlite3 .venv/bin/python -m reconciliation demo
-CRM_DB=runtime/demo.sqlite3 .venv/bin/python -m reconciliation serve --port 8002
+CRM_DB=runtime/demo.sqlite3 .venv/bin/python -m reconciliation serve --port 8011
 ```
 
-Do not supply a token for an offline demo. Reject decisions are local; approvals always require the token and fresh live evidence, even for snapshot-generated proposals. Mock write testing is in pytest, not a hidden fake-success UI mode.
+## How an approval works
 
-## Review walkthrough
+1. Re-scrape the website and re-read all CRM accounts. If the proposal no longer matches the current data, block it.
+2. Re-fetch the target account; re-check the change-of-ownership rule on fresh revenue and AR.
+3. Write (POST or PATCH).
+4. Re-read the account with GET and compare every field. Only then mark it applied.
+5. If a write may have landed but the check failed, mark it `recovery_required` and lock the queue. See `docs/RECOVERY.md`.
 
-1. Check the top-line inventory: 35 website facilities and 29 current Bellhaven children as of the last scan. The directory alone has 34; the homepage adds Findlay.
-2. Open Lima or Findlay: exact identity, wrong/missing parent, revenue history but zero AR. Review the proposed parent, enter your name and rationale, then **Approve & apply**.
-3. Open Marietta or Tiffin: positive revenue and AR. Approval creates the new account and only links the old account to it. The old parent and all other business fields remain intact.
-4. Correct Kettering's survivor **before** its two duplicate copies. Duplicate proposals show the losing account and surviving ID. Only the losing copy is marked Inactive and linked with `duplicate_of_account`.
-5. Review new accounts, renames, and the Portsmouth ZIP correction. Ashtabula's PO box needs investigation, not a guessed physical-address overwrite. Alliance, Coldwater and Sandusky remain under the old parent and are flagged Needs Review.
-6. Refresh proposals after decisions. Applied changes should disappear from proposed work, rejected identical proposals stay rejected, and the audit remains available. A newly changed material state can produce a new proposal.
-
-**Approve is consequential:** it writes to your isolated live CRM. Reject makes no CRM request. There is no bulk approval route, background write worker, or scheduler approval command.
-
-## Validation
-
-```sh
-.venv/bin/python -m pytest -q
-```
-
-49 tests passed: normalization, exact/renamed matches, ZIP correction, decoys, direct re-parenting, CHOW preservation, duplicate/stale handling, idempotency, changed-state blocking, partial CHOW, lost create response, pagination, scraper completeness, and local approval protection. See `docs/VERIFICATION.md` for the verification record.
-
-The full mock review approves all 29 proposals, performs 31 mutations (two CHOWs require two each), and produces zero further proposals. That is a **simulation**, not the live CRM end state.
-
-Live GET endpoints and page parsing were exercised. The public OpenAPI schema lists POST/PATCH paths but omits request/response body schemas; write payloads use observed account fields and assessment conventions. No disposable sandbox/reset endpoint was documented, so POST/PATCH were tested against mocks rather than leaving test records in the final CRM. The first live human approval remains the integration test for undocumented write semantics; mismatches halt for inspection.
+Rejected and applied proposals are fingerprinted and never proposed again. The daily job only runs `reconcile`.
 
 ## Daily schedule
 
-`schedule/daily.cron` is a cron template, intentionally not installed. Set the absolute checkout/database paths and arrange secret injection into the job environment. A normal cron job does **not** inherit your interactive shell's token. Keep SQLite on durable local storage; do not recreate the database each day. The scheduled command is only `reconcile` and cannot approve or write to CRM.
+`schedule/daily.cron` runs `reconcile` at 07:00. It needs `CRM_API_TOKEN` injected by the scheduler and the same persistent database. It cannot approve or write.
 
 ## Layout
 
-- `reconciliation/scraper.py` — complete discovery, parsing, source hashes, fail-closed crawl.
-- `normalize.py`, `rules.py` — identity keys, billing guard, proposals and fingerprints.
-- `crm.py` — paginated CRM reads and exact account endpoint adapter.
-- `store.py` — transactional proposals, decisions, operation journal and run history.
-- `service.py` — read-only pipeline; explicit approval with fresh checks and read-back.
-- `api.py`, `templates/ui.html` — local review, inventory, policy and audit console.
-- `tests/` — isolated tests; never contact the live service.
-- `data/` — token-free fictional assessment snapshots, captured September 17, 2026.
-- `docs/RECONCILIATION_SUMMARY.md` — every CHOW, duplicate and investigation case.
-- `docs/RECOVERY.md` — partial-write recovery procedure and honest operational limits.
+- `reconciliation/scraper.py`: crawl, parse, fail if the community count is short
+- `reconciliation/normalize.py`, `rules.py`: address/name normalization, matching, billing rule, proposals
+- `reconciliation/crm.py`: paginated reads, account endpoints
+- `reconciliation/store.py`: proposals, decisions, operation journal, run history
+- `reconciliation/service.py`: approval flow with fresh checks and read-back
+- `reconciliation/api.py`, `templates/ui.html`: review console
+- `review.py`, `diagnose.py`: terminal review and read-only diagnosis
+- `tests/`, `data/`: offline tests and token-free snapshots
+- `docs/`: recovery procedure, coverage of all accounts
 
-## Architectural provenance
-
-This is a separate project derived from the control-plane patterns in [lead-routing-copilot](https://github.com/devothamgn321/lead-routing-copilot), inspected at commit `cd448a7613dc98bd7deebe3c358be7a2bae5fd8f`. The transactional SQLite connection/event/review structure was adapted from its `copilot/store.py`; the domain, crawler, matching, financial safety and approval integration are assessment-specific. The original repository was not modified. Its MIT license is retained. See `WRITEUP.md` for matching decisions, AI usage and next steps.
+Architecture adapted from my [lead-routing-copilot](https://github.com/devothamgn321/lead-routing-copilot) (MIT).
