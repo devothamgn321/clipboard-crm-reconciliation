@@ -12,4 +12,4 @@
 
 **Next.** Reviewer login, conditional writes if the API supports them, a recovery screen in the app, and a labeled test set for shared campuses and mailing addresses.
 
-**Time:** [X hours total]
+**Time:** [1.5 hours]
